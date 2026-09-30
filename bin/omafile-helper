@@ -1640,6 +1640,106 @@ def op_thumbtypes(req):
     emit({"id": req_id, "t": "thumbtypes", "exts": exts})
     send_done(req_id)
 
+CLIP_TIMEOUT = 3.0
+CLIP_IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp")
+CLIP_IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp"}
+
+def wl_paste(args, limit=16 * 1024 * 1024):
+    tool = shutil.which("wl-paste")
+    if not tool:
+        return None
+    try:
+        out = subprocess.run([tool] + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, timeout=CLIP_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return b""
+    return out.stdout[:limit]
+
+def uri_to_path(uri):
+    uri = uri.strip()
+    if not uri.startswith("file://"):
+        return None
+    rest = uri[7:]
+    if not rest.startswith("/"):
+        host, _, tail = rest.partition("/")
+        if host not in ("", "localhost"):
+            return None
+        rest = "/" + tail
+    rest = rest.split("#", 1)[0].split("?", 1)[0]
+    return to_str(os.path.normpath(urllib.parse.unquote_to_bytes(rest)))
+
+def parse_clip_files(gnome, uris, kde_cut):
+    mode = "copy"
+    lines = []
+    if gnome:
+        rows = gnome.decode("utf-8", "replace").splitlines()
+        if rows and rows[0].strip() in ("copy", "cut"):
+            mode = rows[0].strip()
+            rows = rows[1:]
+        lines = rows
+    elif uris:
+        lines = [l for l in uris.decode("utf-8", "replace").splitlines() if not l.startswith("#")]
+        if kde_cut and kde_cut.strip() == b"1":
+            mode = "cut"
+    paths = []
+    for line in lines:
+        path = uri_to_path(line)
+        if path and path not in paths:
+            paths.append(path)
+    return mode, paths
+
+def op_clipread(req):
+    req_id = req["id"]
+    listing = wl_paste(["--list-types"])
+    if listing is None:
+        send_error(req_id, "EUNSUPPORTED", "wl-paste is not available")
+        return
+    types = [t.strip() for t in listing.decode("utf-8", "replace").splitlines() if t.strip()]
+    gnome = wl_paste(["--no-newline", "--type", "x-special/gnome-copied-files"]) if "x-special/gnome-copied-files" in types else None
+    uris = None
+    if not gnome and "text/uri-list" in types:
+        uris = wl_paste(["--no-newline", "--type", "text/uri-list"])
+    kde_cut = wl_paste(["--no-newline", "--type", "application/x-kde-cutselection"]) if "application/x-kde-cutselection" in types else None
+    mode, paths = parse_clip_files(gnome, uris, kde_cut)
+    image = "" if paths else next((t for t in CLIP_IMAGE_TYPES if t in types), "")
+    emit({"id": req_id, "t": "clip", "mode": mode, "paths": paths, "image": image})
+    send_done(req_id)
+
+def unique_child(dest, stem, ext):
+    candidate = os.path.join(dest, "%s.%s" % (stem, ext))
+    n = 2
+    while os.path.lexists(candidate):
+        candidate = os.path.join(dest, "%s %d.%s" % (stem, n, ext))
+        n += 1
+    return candidate
+
+def op_clipimage(req):
+    req_id = req["id"]
+    dest = req.get("dest")
+    mime = req.get("type")
+    if not isinstance(dest, str) or mime not in CLIP_IMAGE_EXT:
+        send_error(req_id, "EINVAL", "dest and an image type are required")
+        return
+    if not os.path.isdir(to_bytes(dest)):
+        send_error(req_id, "ENOTDIR", "dest is not a directory", dest)
+        return
+    data = wl_paste(["--type", mime], limit=256 * 1024 * 1024)
+    if not data:
+        send_error(req_id, "ENOENT", "the clipboard has no image")
+        return
+    target = unique_child(dest, "Pasted image", CLIP_IMAGE_EXT[mime])
+    try:
+        fd = os.open(to_bytes(target), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        send_error(req_id, errno_code(e), e.strerror or str(e), target)
+        return
+    emit({"id": req_id, "t": "clipimage", "path": target})
+    send_done(req_id)
+
 def op_freespace(req):
     req_id = req["id"]
     path = req.get("path")
@@ -2525,6 +2625,8 @@ SIMPLE_OPS = {
     "stat": op_stat,
     "peek": op_peek,
     "thumbtypes": op_thumbtypes,
+    "clipread": op_clipread,
+    "clipimage": op_clipimage,
     "trash": op_trash,
     "delete": op_delete,
     "restore": op_restore,

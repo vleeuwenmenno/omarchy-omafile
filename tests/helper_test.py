@@ -411,6 +411,84 @@ class ThumbnailTests(HelperTestCase):
     def test_relative_path_is_rejected(self):
         self.assertEqual(self.thumb("clip.mp4")[-1]["code"], "EINVAL")
 
+FAKE_WL_PASTE = """#!/usr/bin/env python3
+import os, sys
+root = os.environ["FAKE_CLIP_DIR"]
+args = sys.argv[1:]
+if "--list-types" in args:
+    sys.stdout.write("\\n".join(sorted(n.replace("%", "/") for n in os.listdir(root))) + "\\n")
+    sys.exit(0)
+mime = args[args.index("--type") + 1]
+path = os.path.join(root, mime.replace("/", "%"))
+if not os.path.exists(path):
+    sys.exit(1)
+sys.stdout.buffer.write(open(path, "rb").read())
+"""
+
+class ClipboardTests(HelperTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.tmp.name, "files")
+        os.makedirs(self.root)
+        self.clip = os.path.join(self.tmp.name, "clip")
+        os.makedirs(self.clip)
+        bindir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(bindir)
+        tool = os.path.join(bindir, "wl-paste")
+        with open(tool, "w") as f:
+            f.write(FAKE_WL_PASTE)
+        os.chmod(tool, 0o755)
+        self.helper = Helper(env={"FAKE_CLIP_DIR": self.clip,
+                                  "PATH": bindir + os.pathsep + os.environ.get("PATH", "")})
+        self._next_id = 1
+
+    def offer(self, mime, data):
+        with open(os.path.join(self.clip, mime.replace("/", "%")), "wb") as f:
+            f.write(data)
+
+    def read(self):
+        msgs = self.helper.call({"id": self.next_id(), "op": "clipread"})
+        self.assertEqual(msgs[-1]["t"], "done", msgs)
+        return [m for m in msgs if m["t"] == "clip"][0]
+
+    def test_gnome_cut_list(self):
+        self.offer("x-special/gnome-copied-files", b"cut\nfile:///tmp/a%20b.txt\nfile:///tmp/c")
+        self.offer("text/uri-list", b"file:///tmp/ignored\r\n")
+        clip = self.read()
+        self.assertEqual(clip["mode"], "cut")
+        self.assertEqual(clip["paths"], ["/tmp/a b.txt", "/tmp/c"])
+
+    def test_uri_list_with_kde_cut_marker(self):
+        self.offer("text/uri-list", b"# comment\r\nfile:///tmp/x%23y\r\nhttps://example.com/z\r\n")
+        self.offer("application/x-kde-cutselection", b"1")
+        clip = self.read()
+        self.assertEqual(clip["mode"], "cut")
+        self.assertEqual(clip["paths"], ["/tmp/x#y"])
+
+    def test_plain_uri_list_is_a_copy(self):
+        self.offer("text/uri-list", b"file://localhost/tmp/one\r\nfile://elsewhere/tmp/two\r\n")
+        clip = self.read()
+        self.assertEqual(clip["mode"], "copy")
+        self.assertEqual(clip["paths"], ["/tmp/one"])
+
+    def test_image_is_offered_and_saved_with_a_unique_name(self):
+        self.offer("image/png", b"\\x89PNG fake")
+        self.offer("text/plain", b"hello")
+        clip = self.read()
+        self.assertEqual(clip["paths"], [])
+        self.assertEqual(clip["image"], "image/png")
+        open(os.path.join(self.root, "Pasted image.png"), "w").close()
+        msgs = self.helper.call({"id": self.next_id(), "op": "clipimage", "dest": self.root, "type": "image/png"})
+        saved = [m for m in msgs if m["t"] == "clipimage"][0]["path"]
+        self.assertEqual(saved, os.path.join(self.root, "Pasted image 2.png"))
+        with open(saved, "rb") as f:
+            self.assertEqual(f.read(), b"\\x89PNG fake")
+
+    def test_empty_clipboard(self):
+        clip = self.read()
+        self.assertEqual(clip["paths"], [])
+        self.assertEqual(clip["image"], "")
+
 class SymlinkTests(HelperTestCase):
     def test_symlink_kinds(self):
         target_dir = self.path("realdir")

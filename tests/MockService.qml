@@ -6,7 +6,6 @@ QtObject {
   property var files: [["alpha.yml", "f", 30, 300, 420, null], ["beta.png", "f", 10, 100, 420, null], ["docs", "d", 0, 200, 493, null]]
   property var session: null
   property var pinned: []
-  property var clipboard: null
   property var transfers: []
   property string helperError: ""
   property string windowMode: "window"
@@ -76,6 +75,23 @@ QtObject {
   function openWith(command, path, inTerminal) { record("openWith", [command, path, inTerminal]) }
   function runCommandOn(text, path) { record("runCommandOn", [text, path]); return true }
   function openExternally(path) { record("openExternally", [path]) }
+  property var clipboard: ({ mode: "", paths: [] })
+  property var cutPaths: ({})
+  property var systemClip: null
+  function setClipboard(mode, paths) {
+    record("setClipboard", [mode, paths])
+    clipboard = { mode: mode, paths: paths.slice() }
+    var cut = {}
+    if (mode === "cut") for (var i = 0; i < paths.length; i++) cut[paths[i]] = true
+    cutPaths = cut
+  }
+  function clearClipboard() { record("clearClipboard", []); clipboard = { mode: "", paths: [] }; cutPaths = ({}) }
+  function readSystemClipboard(onResult, onError) {
+    if (systemClip) onResult(systemClip)
+    else if (onError) onError({ code: "EUNSUPPORTED" })
+    return 0
+  }
+  function pasteImage(dest, type, onDone, onError) { record("pasteImage", [dest, type]); onDone(dest + "/Pasted image.png"); return 0 }
   function thumbnailFor(path, mtime, bucket, onReady) { record("thumbnailFor", [path, mtime, bucket]); onReady(""); return null }
   function releaseThumbnail(ticket) {}
   function finishPick(result) { record("finishPick", [result]); pickRequest = null }

@@ -257,6 +257,28 @@ fails with `EINVAL`.
 Replies `{"t": "thumbtypes", "exts": ["avi", "mkv", "mp4", "pdf", ...]}` then `done`:
 the lowercase file extensions some installed thumbnailer can handle.
 
+### clipread
+
+```
+{"id": N, "op": "clipread"}
+```
+
+Replies `{"t": "clip", "mode": "copy" | "cut", "paths": [...], "image": "image/png" | ""}`
+then `done`. Reads the system clipboard with `wl-paste`. Files come from
+`x-special/gnome-copied-files` (GNOME Files, Omafile), or from `text/uri-list` with
+`application/x-kde-cutselection` marking a cut (Dolphin, browsers, chat apps). Only local
+`file://` URIs are returned. When there are no files but an image is on the clipboard,
+`image` names its type. Fails with `EUNSUPPORTED` when `wl-paste` is missing.
+
+### clipimage
+
+```
+{"id": N, "op": "clipimage", "dest": "/home/me/Pictures", "type": "image/png"}
+```
+
+Saves the clipboard image into `dest` as `Pasted image.png`, `Pasted image 2.png` and so
+on, never overwriting. Replies `{"t": "clipimage", "path": P}` then `done`.
+
 ### freespace
 
 ```

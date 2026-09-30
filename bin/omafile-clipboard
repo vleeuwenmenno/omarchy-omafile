@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+import array
+import errno
+import json
+import os
+import select
+import signal
+import socket
+import struct
+import sys
+import urllib.parse
+
+URI_SAFE = "/!$&'()*+,;=:@-._~"
+MANAGERS = ("ext_data_control_manager_v1", "zwlr_data_control_manager_v1")
+
+
+def fail(message, code=1):
+    sys.stderr.write("omafile-clipboard: %s\n" % message)
+    sys.stderr.flush()
+    sys.exit(code)
+
+
+def file_uri(path):
+    return "file://" + urllib.parse.quote(os.fsencode(os.path.abspath(path)), safe=URI_SAFE)
+
+
+def payloads(mode, paths):
+    uris = [file_uri(p) for p in paths]
+    plain = "\n".join(os.path.abspath(p) for p in paths).encode("utf-8", "surrogateescape")
+    data = {
+        "x-special/gnome-copied-files": ("\n".join([mode] + uris)).encode("ascii"),
+        "text/uri-list": ("".join(u + "\r\n" for u in uris)).encode("ascii"),
+        "text/plain;charset=utf-8": plain,
+        "text/plain": plain,
+        "UTF8_STRING": plain,
+    }
+    if mode == "cut":
+        data["application/x-kde-cutselection"] = b"1"
+    return data
+
+
+def wl_string(text):
+    raw = text.encode("utf-8") + b"\0"
+    return struct.pack("<I", len(raw)) + raw + b"\0" * ((4 - len(raw) % 4) % 4)
+
+
+def read_string(body, pos):
+    length = struct.unpack_from("<I", body, pos)[0]
+    pos += 4
+    text = body[pos:pos + length - 1].decode("utf-8", "replace") if length else ""
+    pos += (length + 3) & ~3
+    return text, pos
+
+
+class Wayland:
+    def __init__(self):
+        name = os.environ.get("WAYLAND_DISPLAY") or "wayland-0"
+        path = name if name.startswith("/") else os.path.join(os.environ.get("XDG_RUNTIME_DIR", ""), name)
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            self.sock.connect(path)
+        except OSError as e:
+            fail("cannot connect to Wayland display %s: %s" % (path, e))
+        self.next_id = 2
+        self.buffer = b""
+        self.fds = []
+
+    def new_id(self):
+        value = self.next_id
+        self.next_id += 1
+        return value
+
+    def send(self, obj, opcode, payload=b""):
+        header = struct.pack("<II", obj, ((8 + len(payload)) << 16) | opcode)
+        self.sock.sendall(header + payload)
+
+    def read_messages(self):
+        fds = array.array("i")
+        data, ancdata, flags, addr = self.sock.recvmsg(65536, socket.CMSG_SPACE(28 * fds.itemsize))
+        if not data:
+            fail("compositor closed the connection", 0)
+        for level, kind, cdata in ancdata:
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                fds.frombytes(cdata[:len(cdata) - (len(cdata) % fds.itemsize)])
+        self.fds.extend(fds)
+        self.buffer += data
+        out = []
+        while len(self.buffer) >= 8:
+            obj, word = struct.unpack_from("<II", self.buffer, 0)
+            size = word >> 16
+            if size < 8 or len(self.buffer) < size:
+                break
+            out.append((obj, word & 0xffff, self.buffer[8:size]))
+            self.buffer = self.buffer[size:]
+        return out
+
+
+def serve(data):
+    wl = Wayland()
+    registry = wl.new_id()
+    wl.send(1, 1, struct.pack("<I", registry))
+    done = wl.new_id()
+    wl.send(1, 0, struct.pack("<I", done))
+    globals_ = {}
+    finished = False
+    while not finished:
+        for obj, opcode, body in wl.read_messages():
+            if obj == 1 and opcode == 0:
+                message, _ = read_string(body, 8)
+                fail("compositor error: %s" % message)
+            if obj == registry and opcode == 0:
+                name = struct.unpack_from("<I", body, 0)[0]
+                interface, pos = read_string(body, 4)
+                version = struct.unpack_from("<I", body, pos)[0]
+                globals_.setdefault(interface, (name, version))
+            if obj == done:
+                finished = True
+    manager_name = next((m for m in MANAGERS if m in globals_), None)
+    if not manager_name or "wl_seat" not in globals_:
+        fail("the compositor does not offer a data control protocol", 2)
+
+    def bind(interface, version):
+        new = wl.new_id()
+        name = globals_[interface][0]
+        wl.send(registry, 0, struct.pack("<I", name) + wl_string(interface) + struct.pack("<II", version, new))
+        return new
+
+    seat = bind("wl_seat", 1)
+    manager = bind(manager_name, 1)
+    source = wl.new_id()
+    wl.send(manager, 0, struct.pack("<I", source))
+    for mime in data:
+        wl.send(source, 0, wl_string(mime))
+    device = wl.new_id()
+    wl.send(manager, 1, struct.pack("<II", device, seat))
+    wl.send(device, 0, struct.pack("<I", source))
+    ready = wl.new_id()
+    wl.send(1, 0, struct.pack("<I", ready))
+
+    announced = False
+    while True:
+        select.select([wl.sock], [], [])
+        for obj, opcode, body in wl.read_messages():
+            if obj == 1 and opcode == 0:
+                message, _ = read_string(body, 8)
+                fail("compositor error: %s" % message)
+            elif obj == ready and not announced:
+                announced = True
+                sys.stdout.write("ready\n")
+                sys.stdout.flush()
+            elif obj == source and opcode == 0:
+                mime, _ = read_string(body, 0)
+                fd = wl.fds.pop(0) if wl.fds else -1
+                if fd >= 0:
+                    write_payload(fd, data.get(mime, b""))
+            elif obj == source and opcode == 1:
+                sys.exit(0)
+            elif obj == device and opcode == 2:
+                sys.exit(0)
+
+
+def write_payload(fd, payload):
+    try:
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            view = view[written:]
+    except OSError as e:
+        if e.errno not in (errno.EPIPE, errno.EBADF):
+            sys.stderr.write("omafile-clipboard: write failed: %s\n" % e)
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def main():
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        request = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
+    except ValueError:
+        fail('expected {"mode": "copy" or "cut", "paths": [...]} on standard input', 64)
+    mode = request.get("mode") if isinstance(request, dict) else None
+    paths = request.get("paths") if isinstance(request, dict) else None
+    if mode not in ("copy", "cut") or not isinstance(paths, list) or not paths:
+        fail('expected {"mode": "copy" or "cut", "paths": [...]} on standard input', 64)
+    serve(payloads(mode, [str(p) for p in paths]))
+
+
+if __name__ == "__main__":
+    main()

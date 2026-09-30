@@ -15,6 +15,7 @@ A lightweight, fast file manager plugin for Omarchy running in the shell.
 * Background copy and move with persistent progress tracking
 * Freedesktop trash integration, compatible with GNOME Files, with Empty trash and Restore in the trash view
 * Drag and drop: files to other apps such as Telegram, Discord or a browser upload, between folders and panes, onto the sidebar, and in from other apps
+* Copy and cut to the system clipboard: paste files into Telegram, Discord, GNOME Files or a terminal, and paste files or images copied in other apps
 * Recursive file search across directories
 * Image previews in list, compact and grid view, plus thumbnails for videos, PDFs, office files and anything else your system has a thumbnailer for
 * Recent files, and bookmarks for the folders you use most
@@ -87,6 +88,10 @@ Zoom scales rows, icons and grid cells from 50 to 300 percent. Use the minus and
 ### Preview
 
 Press Space on a file to preview it without opening another app. Images are shown full size. Text files such as `.yml`, `.json`, `.md` or scripts are shown as text, up to the first 256 KB. Arrow keys move to the next file while the preview stays open. Enter opens the file, and Space or Escape closes the preview. Preview is also in the right click menu.
+
+### Copy, cut and paste
+
+Ctrl+C and Ctrl+X put files on the system clipboard, so Ctrl+V works in other apps too: a chat app attaches the files, GNOME Files copies or moves them, a terminal gets the paths. Cut items fade and show a scissors mark until you paste them or copy something else. Ctrl+V in Omafile pastes files copied in GNOME Files, Dolphin or a browser, and an image on the clipboard, such as a screenshot, is saved as `Pasted image.png`. The clipboard is kept by a small `bin/omafile-clipboard` process for as long as it holds your copy, using the Wayland data control protocol.
 
 ### Drag and drop
 

@@ -16,6 +16,7 @@ Item {
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/omarchy/omafile"
   readonly property string statePath: stateDir + "/state.json"
   readonly property string helperPath: String(Qt.resolvedUrl("bin/omafile-helper")).replace(/^file:\/\//, "")
+  readonly property string clipboardPath: String(Qt.resolvedUrl("bin/omafile-clipboard")).replace(/^file:\/\//, "")
 
   readonly property var defaults: manifest && manifest.barWidget && manifest.barWidget.defaults ? manifest.barWidget.defaults : ({})
   readonly property var settings: resolveSettings(shell ? shell.barConfig : null)
@@ -384,12 +385,77 @@ Item {
     })
   }
 
+  property int _clipToken: 0
+  property var _clipProc: null
+  property var cutPaths: ({})
+
   function setClipboard(mode, paths) {
     clipboard = { mode: mode, paths: paths.slice() }
+    var cut = {}
+    if (mode === "cut") for (var i = 0; i < paths.length; i++) cut[paths[i]] = true
+    cutPaths = cut
+    var old = _clipProc
+    _clipToken++
+    _clipProc = clipServerComponent.createObject(root, {
+      token: _clipToken,
+      payload: JSON.stringify({ mode: mode === "cut" ? "cut" : "copy", paths: paths }) + "\n"
+    })
+    if (_clipProc) _clipProc.running = true
+    if (old) old.running = false
   }
 
   function clearClipboard() {
     clipboard = { mode: "", paths: [] }
+    cutPaths = ({})
+    _clipToken++
+    var old = _clipProc
+    _clipProc = null
+    if (old) old.running = false
+  }
+
+  function clipServerExited(token) {
+    if (token !== _clipToken) return
+    _clipToken++
+    _clipProc = null
+    clipboard = { mode: "", paths: [] }
+    cutPaths = ({})
+  }
+
+  function readSystemClipboard(onResult, onError) {
+    var result = null
+    return request({ op: "clipread" }, {
+      onData: function (m) { if (m.t === "clip") result = m },
+      onDone: function () { if (onResult) onResult(result || { mode: "copy", paths: [], image: "" }) },
+      onError: function (m) { if (onError) onError(m) }
+    })
+  }
+
+  function pasteImage(dest, type, onDone, onError) {
+    var result = ""
+    return request({ op: "clipimage", dest: dest, type: type }, {
+      onData: function (m) { if (m.t === "clipimage") result = String(m.path || "") },
+      onDone: function () { if (onDone) onDone(result) },
+      onError: function (m) { if (onError) onError(m) }
+    })
+  }
+
+  property Component clipServerComponent: Component {
+    Process {
+      id: clipServer
+      property int token: 0
+      property string payload: ""
+      command: [root.clipboardPath]
+      running: false
+      stdinEnabled: true
+      onStarted: {
+        clipServer.write(clipServer.payload)
+        clipServer.stdinEnabled = false
+      }
+      onExited: {
+        root.clipServerExited(clipServer.token)
+        clipServer.destroy()
+      }
+    }
   }
 
   function beginTransfer(op, sources, dest, conflict) {

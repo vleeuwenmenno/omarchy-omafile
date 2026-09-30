@@ -463,11 +463,42 @@ Item {
     statusText = Model.formatCount(paths.length, "item cut", "items cut")
   }
   function doPaste() {
-    var clip = service ? service.clipboard : null
-    if (!clip || !clip.paths || clip.paths.length === 0) return
+    if (!service) return
     var p = activePane()
-    service.beginTransfer(clip.mode === "cut" ? "move" : "copy", clip.paths, p.path, "ask")
-    if (clip.mode === "cut") service.clearClipboard()
+    if (p.virtualView || p.path === "") return
+    var dest = p.path
+    service.readSystemClipboard(function (clip) {
+      if (clip && clip.paths && clip.paths.length > 0) {
+        root.pasteFiles(clip.mode, clip.paths, dest)
+      } else if (clip && clip.image) {
+        service.pasteImage(dest, clip.image, function (path) {
+          root.statusText = "Pasted " + Model.basename(path)
+        }, function (m) {
+          root.statusText = String(m.message || "Could not paste the image")
+        })
+      } else {
+        root.pasteInternal(dest)
+      }
+    }, function () { root.pasteInternal(dest) })
+  }
+  function pasteInternal(dest) {
+    var clip = service ? service.clipboard : null
+    if (!clip || !clip.paths || clip.paths.length === 0) {
+      statusText = "Nothing to paste"
+      return
+    }
+    pasteFiles(clip.mode, clip.paths, dest)
+  }
+  function pasteFiles(mode, paths, dest) {
+    var copying = mode !== "cut"
+    var sources = Model.dropSources(paths, dest, copying)
+    if (sources.length === 0) {
+      statusText = copying ? "Nothing to paste" : "Already in this folder"
+      return
+    }
+    service.beginTransfer(copying ? "copy" : "move", sources, dest, "ask")
+    if (!copying) service.clearClipboard()
+    statusText = (copying ? "Copying " : "Moving ") + Model.formatCount(sources.length, "item", "items")
   }
   function clampViewScale(value) {
     var n = Number(value)
@@ -649,7 +680,7 @@ Item {
       items.push({ key: "cut", label: "Cut", glyph: Icons.actionGlyph("cut") })
     }
     items.push({ key: "paste", label: "Paste", glyph: Icons.actionGlyph("paste"),
-      disabled: !service || !service.clipboard || service.clipboard.paths.length === 0 })
+      disabled: !service || activePane().virtualView })
     if (hasEntry) {
       var trashed = Model.allInTrash([entry.path], trashRoot())
       items.push({ key: "sep2", label: "", glyph: "" })

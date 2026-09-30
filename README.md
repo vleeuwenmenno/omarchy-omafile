@@ -93,6 +93,10 @@ Press Space on a file to preview it without opening another app. Images are show
 
 Ctrl+C and Ctrl+X put files on the system clipboard, so Ctrl+V works in other apps too: a chat app attaches the files, GNOME Files copies or moves them, a terminal gets the paths. Cut items fade and show a scissors mark until you paste them or copy something else. Ctrl+V in Omafile pastes files copied in GNOME Files, Dolphin or a browser, and an image on the clipboard, such as a screenshot, is saved as `Pasted image.png`. The clipboard is kept by a small `bin/omafile-clipboard` process for as long as it holds your copy, using the Wayland data control protocol.
 
+### Transfers
+
+Copies and moves run in the background. Quick ones finish silently. Anything still running after about a second opens a small Transfers panel in the bottom right with progress, speed and time left. Click a transfer to see where it goes, how many files are done and any errors. Minimize the panel into the status bar and it stays there, with a progress bar, until you click it again. Finished transfers stay in the list so you can check them later: clear them one by one, or all at once with Clear completed.
+
 ### Drag and drop
 
 Drag files or folders out of Omafile into any app that accepts files, such as Telegram, Discord, a browser upload field or a terminal. Pressing on an item that is already part of a selection drags the whole selection.

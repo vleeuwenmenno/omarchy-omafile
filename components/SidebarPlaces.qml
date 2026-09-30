@@ -84,6 +84,7 @@ Item {
   signal connectServer(string uri)
   signal disconnectServer(string path)
   signal filesDropped(var paths, string target, string mode)
+  signal placeMenuRequested(var row, real x, real y)
   function droppable(row) {
     if (!row || !row.path || row.path === "recent:") return false
     return row.connect !== true && row.server !== true && row.unhide !== true
@@ -276,6 +277,7 @@ Item {
 
               delegate: Rectangle {
                 required property var modelData
+                objectName: "place-" + modelData.key
                 readonly property bool cursored: sidebar.keyboardActive
                   && sidebar.rowKey(modelData) === sidebar.cursorKey
                 width: column.width - Style.space(8)
@@ -308,9 +310,16 @@ Item {
                 }
 
                 MouseArea {
+                  id: placeMouse
                   anchors.fill: parent
                   acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                   onClicked: function (mouse) {
+                    if (modelData.dropBookmark === true) return
+                    if (mouse.button === Qt.RightButton) {
+                      var pt = placeMouse.mapToItem(sidebar, mouse.x, mouse.y)
+                      sidebar.placeMenuRequested(modelData, pt.x, pt.y)
+                      return
+                    }
                     if (modelData.unhide === true) {
                       sidebar.showAllDrives()
                       return
@@ -321,18 +330,6 @@ Item {
                     }
                     if (modelData.server === true) {
                       sidebar.connectServer(String(modelData.uri || ""))
-                      return
-                    }
-                    if (mouse.button === Qt.RightButton && modelData.mounted === true) {
-                      sidebar.disconnectServer(modelData.path)
-                      return
-                    }
-                    if (mouse.button === Qt.RightButton) {
-                      if (modelData.key === "drive" || modelData.key === "usb"
-                        || modelData.key === "networkdrive")
-                        sidebar.hideDrive(modelData.path)
-                      else if (modelData.bookmark === true)
-                        sidebar.removeBookmark(modelData.path)
                       return
                     }
                     if (mouse.button === Qt.MiddleButton) sidebar.openInNewTab(modelData.path)
@@ -457,8 +454,18 @@ Item {
           }
 
           MouseArea {
+            id: trashMouse
             anchors.fill: parent
-            onClicked: sidebar.navigate((Quickshell.env("XDG_DATA_HOME") || sidebar.home + "/.local/share") + "/Trash/files")
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+            onClicked: function (mouse) {
+              if (mouse.button === Qt.RightButton) {
+                var pt = trashMouse.mapToItem(sidebar, mouse.x, mouse.y)
+                sidebar.placeMenuRequested({ key: "trash", label: "Trash", path: sidebar.trashPath(), trash: true }, pt.x, pt.y)
+                return
+              }
+              if (mouse.button === Qt.MiddleButton) sidebar.openInNewTab(sidebar.trashPath())
+              else sidebar.navigate(sidebar.trashPath())
+            }
           }
 
           Row {

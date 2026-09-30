@@ -112,6 +112,7 @@ Videos, PDFs, office documents and other files get a thumbnail from the thumbnai
 Places, then your bookmarks, then drives, then Network, then Trash.
 
 Right click a folder and choose Bookmark this folder to pin it. Remove a bookmark with the cross beside it.
+Right click anything in the sidebar for a menu: open it here, in a new tab or in the other pane, copy its path, or see its properties, including capacity and free space for drives. Depending on the entry the menu also offers Remove bookmark, Unmount, Eject for removable drives, Disconnect for network shares, Hide from the sidebar, or Empty trash. System mounts such as `/`, `/boot` or `/var/log` are never offered for unmounting.
 
 Recent lists the files you opened most recently, newest first, from the same history the rest of the desktop uses. Opening one goes straight to the file. There is no folder above it, so leave by picking a place or a bookmark.
 

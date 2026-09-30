@@ -763,9 +763,152 @@ Item {
     }
     return items
   }
+  function placeMenuActions(row) {
+    var items = []
+    var real = row.path && row.path !== "recent:"
+    if (row.server === true || row.connect === true) {
+      items.push({ key: "place:connect", label: "Connect", glyph: Icons.placeGlyph("network") })
+      if (row.remembered === true && row.uri)
+        items.push({ key: "place:editserver", label: "Edit\u2026", glyph: Icons.actionGlyph("rename") })
+      if (row.remembered === true && row.uri)
+        items.push({ key: "place:forget", label: "Forget this server", glyph: Icons.actionGlyph("close") })
+      return items
+    }
+    if (row.unhide === true) {
+      items.push({ key: "place:unhide", label: "Show hidden drives", glyph: Icons.actionGlyph("settings") })
+      return items
+    }
+    items.push({ key: "place:open", label: "Open", glyph: Icons.actionGlyph("open") })
+    items.push({ key: "place:tab", label: "Open in new tab", glyph: Icons.actionGlyph("add") })
+    if (split) items.push({ key: "place:other", label: "Open in the other pane", glyph: Icons.actionGlyph("split") })
+    var drive = row.key === "drive" || row.key === "usb" || row.key === "networkdrive"
+    var extra = []
+    if (row.bookmark === true) {
+      extra.push({ key: "place:renamebookmark", label: "Rename bookmark", glyph: Icons.actionGlyph("rename") })
+      extra.push({ key: "place:unbookmark", label: "Remove bookmark", glyph: Icons.actionGlyph("close") })
+    }
+    if (row.mounted === true)
+      extra.push({ key: "place:disconnect", label: "Disconnect", glyph: Icons.actionGlyph("eject") })
+    if (row.connected === true && row.remembered === true && row.uri)
+      extra.push({ key: "place:forget", label: "Forget this server", glyph: Icons.actionGlyph("close") })
+    else if (drive && row.device && !Model.isSystemMount(row.path)) {
+      extra.push({ key: "place:unmount", label: "Unmount", glyph: Icons.actionGlyph("eject") })
+      if (row.removable === true)
+        extra.push({ key: "place:eject", label: "Eject", glyph: Icons.actionGlyph("eject") })
+    }
+    if (drive) extra.push({ key: "place:hide", label: "Hide from the sidebar", glyph: Icons.actionGlyph("hidden") })
+    if (row.trash === true)
+      extra.push({ key: "place:emptytrash", label: "Empty trash", glyph: Icons.actionGlyph("delete"),
+        disabled: !service || service.trashCount <= 0 })
+    if (extra.length > 0) {
+      items.push({ key: "sep-place1", label: "", glyph: "" })
+      items = items.concat(extra)
+    }
+    if (real) {
+      items.push({ key: "sep-place2", label: "", glyph: "" })
+      items.push({ key: "place:copypath", label: "Copy path", glyph: Icons.actionGlyph("copy") })
+      items.push({ key: "place:properties", label: "Properties", glyph: Icons.actionGlyph("properties") })
+    }
+    return items
+  }
+  function openPlaceMenu(row, x, y) {
+    var pt = sidebar.mapToItem(keyCatcher, x, y)
+    menuKind = "sidebar"
+    menuEntry = row
+    menuActions = placeMenuActions(row)
+    menuCursor = -1
+    menuX = pt.x
+    menuY = pt.y
+    menuOpen = true
+  }
+  function runPlaceAction(action, row) {
+    if (!row) return
+    var path = String(row.path || "")
+    if (action === "open") activePane().navigate(path)
+    else if (action === "tab") newTab(activeSide, path)
+    else if (action === "other" && split) {
+      activeSide = otherSide()
+      activePane().navigate(path)
+    }
+    else if (action === "unbookmark") service.togglePinned(path)
+    else if (action === "renamebookmark") showDialog("bookmarkname", "Rename bookmark", String(row.label || ""), row)
+    else if (action === "forget") {
+      var key = Model.serverKeyOf(String(row.uri || ""))
+      var saved = service.servers.slice()
+      for (var i = 0; i < saved.length; i++)
+        if (Model.serverKeyOf(String(saved[i])) === key) service.forgetServer(String(saved[i]))
+      statusText = "Forgot " + String(row.label || row.uri || "")
+    }
+    else if (action === "hide") {
+      service.toggleHiddenDrive(path)
+      statusText = "\u201c" + row.label + "\u201d hidden, show it again in Settings"
+    }
+    else if (action === "disconnect") service.disconnectServer(path, null, null)
+    else if (action === "unmount" || action === "eject") {
+      var verb = action === "eject" ? "Ejecting " : "Unmounting "
+      statusText = verb + row.label
+      var done = function (ok, output) {
+        root.statusText = ok ? "\u201c" + row.label + "\u201d " + (action === "eject" ? "ejected" : "unmounted")
+          : String(output || ("Could not unmount " + row.label)).split("\n")[0]
+        var here = activePane().path
+        if (ok && (here === path || Model.isAncestor(path, here))) activePane().navigate(root.home)
+      }
+      if (action === "eject") service.ejectDrive(row.device, done)
+      else service.unmountDrive(row.device, done)
+    }
+    else if (action === "emptytrash") askEmptyTrash()
+    else if (action === "copypath") {
+      service.copyToClipboardText(path)
+      statusText = "Path copied"
+    }
+    else if (action === "properties") showPlaceProperties(row)
+    else if (action === "connect") openServer(String(row.uri || ""))
+    else if (action === "editserver") showDialog("connect", "Connect to a server", String(row.uri || ""), null)
+    else if (action === "unhide") showDialog("settings", "Settings", "", null)
+  }
+  function bookmarkFolders(paths) {
+    service.statPaths(paths, function (items) {
+      var dirs = []
+      for (var i = 0; i < items.length; i++)
+        if (items[i] && !items[i].error && (items[i].kind === "d" || items[i].kind === "L")) dirs.push(String(items[i].path))
+      if (dirs.length === 0) {
+        root.statusText = "Only folders can be bookmarked"
+        return
+      }
+      var added = service.addBookmarks(dirs)
+      root.statusText = added > 0 ? Model.formatCount(added, "folder bookmarked", "folders bookmarked") : "Already bookmarked"
+    })
+  }
+  function showPlaceProperties(row) {
+    var path = String(row.path || "")
+    service.statPaths([path], function (items) {
+      var info = items && items.length > 0 ? items[0] : null
+      if (!info || info.error) {
+        root.statusText = "Could not read " + row.label
+        return
+      }
+      var entry = Model.decodeEntry([path === "/" ? "/" : Model.basename(path), info.kind, info.size,
+        info.mtime, info.mode, info.linkTarget, path], Model.dirname(path))
+      entry.placeLabel = String(row.label || "")
+      entry.driveTotal = Number(row.total) || 0
+      entry.driveFree = Number(row.free) || 0
+      entry.device = String(row.device || "")
+      entry.skipUsage = entry.driveTotal > 0 || path === "/"
+      root.showProperties(entry)
+    })
+  }
   function runAction(key) {
     if (key.indexOf("zoom:") === 0) {
       runZoom(key.substring(5))
+      return
+    }
+    if (key.indexOf("place:") === 0) {
+      var row = menuEntry
+      menuOpen = false
+      menuKind = ""
+      runPlaceAction(key.substring(6), row)
+      focusZone = "pane"
+      keyCatcher.forceActiveFocus()
       return
     }
     var p = activePane()
@@ -895,7 +1038,7 @@ Item {
     service.statPaths([entry.path], function (items) {
       if (items && items.length > 0) root.propsInfo = items[0]
     })
-    if (entry.isDir) {
+    if (entry.isDir && !entry.skipUsage) {
       propsDuId = service.diskUsage(entry.path, function (m) {
         root.propsBytes = Number(m.bytes) || 0
         root.propsFiles = Number(m.files) || 0
@@ -1549,6 +1692,7 @@ Item {
           onOpenInNewTab: function (target) { root.newTab(root.activeSide, target) }
           onRemoveBookmark: function (target) { root.service.togglePinned(target) }
           onHideDrive: function (key) { root.service.toggleHiddenDrive(key) }
+          onPlaceMenuRequested: function (row, x, y) { root.openPlaceMenu(row, x, y) }
           onShowAllDrives: root.showDialog("settings", "Settings", "", null)
           onConnectServer: function (uri) {
             root.showDialog("connect", "Connect to a server", String(uri || ""), null)
@@ -3124,14 +3268,20 @@ Item {
     var info = propsInfo
     if (!entry) return []
     var rows = []
-    rows.push({ label: "Name", value: entry.name })
+    rows.push({ label: "Name", value: entry.placeLabel || entry.name })
+    if (entry.device) rows.push({ label: "Device", value: entry.device })
+    if (entry.driveTotal > 0) {
+      rows.push({ label: "Capacity", value: Model.formatSize(entry.driveTotal) })
+      rows.push({ label: "Free", value: Model.formatSize(entry.driveFree) + " ("
+        + Math.round(entry.driveFree / entry.driveTotal * 100) + "% free)" })
+    }
     rows.push({ label: "Location", value: Model.dirname(entry.path) })
     rows.push({ label: "Type", value: Model.kindLabel(entry) })
-    if (entry.isDir) {
+    if (!entry.isDir) {
+      rows.push({ label: "Size", value: Model.formatSize(entry.size) })
+    } else if (!entry.skipUsage) {
       rows.push({ label: "Contents", value: propsFiles + " files, " + propsDirs + " folders" })
       rows.push({ label: "Size", value: Model.formatSize(propsBytes) })
-    } else {
-      rows.push({ label: "Size", value: Model.formatSize(entry.size) })
     }
     rows.push({ label: "Modified", value: Model.formatFullDate(entry.mtime) })
     if (info) {

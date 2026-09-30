@@ -542,3 +542,14 @@ test('selection summary shows the size of the selected files', function () {
   assert.equal(Model.selectionSummary([dir, dir]), '2 items selected');
 });
 
+test('system mounts are never offered for unmounting', function () {
+  assert.equal(Model.isSystemMount('/'), true);
+  assert.equal(Model.isSystemMount('/boot'), true);
+  assert.equal(Model.isSystemMount('/var/log'), true);
+  assert.equal(Model.isSystemMount('/var/cache/pacman/pkg'), true);
+  assert.equal(Model.isSystemMount('/home/'), true);
+  assert.equal(Model.isSystemMount('/mnt'), false);
+  assert.equal(Model.isSystemMount('/run/media/me/USB'), false);
+  assert.equal(Model.isSystemMount('/home/me/Projects'), false);
+});
+

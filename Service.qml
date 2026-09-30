@@ -931,9 +931,36 @@ Item {
     Quickshell.execDetached(["sh", "-c", "printf %s \"$1\" | wl-copy", "omafile", String(text)])
   }
 
-  function ejectDrive(devicePath) {
-    Quickshell.execDetached(["sh", "-c",
-      "udisksctl unmount -b \"$1\" && udisksctl power-off -b \"$1\"", "omafile", String(devicePath)])
+  function ejectDrive(devicePath, onDone) {
+    runDriveCommand("udisksctl unmount -b \"$1\" && udisksctl power-off -b \"$1\"", devicePath, onDone)
+  }
+
+  function unmountDrive(devicePath, onDone) {
+    runDriveCommand("udisksctl unmount -b \"$1\"", devicePath, onDone)
+  }
+
+  function runDriveCommand(script, devicePath, onDone) {
+    var proc = driveCommandComponent.createObject(root, {
+      command: ["sh", "-c", script + " 2>&1", "omafile", String(devicePath)],
+      whenDone: function (code, output) {
+        root.refreshDrives()
+        if (onDone) onDone(code === 0, output)
+      }
+    })
+    if (proc) proc.running = true
+  }
+
+  property Component driveCommandComponent: Component {
+    Process {
+      id: driveCommand
+      property var whenDone: null
+      running: false
+      stdout: StdioCollector { id: driveOutput }
+      onExited: function (exitCode) {
+        if (driveCommand.whenDone) driveCommand.whenDone(exitCode, String(driveOutput.text || "").trim())
+        driveCommand.destroy()
+      }
+    }
   }
 
   function noteRecent(path) {

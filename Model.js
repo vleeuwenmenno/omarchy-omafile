@@ -347,6 +347,14 @@ function isAncestor(ancestorPath, path) {
   return p.indexOf(a + '/') === 0;
 }
 
+var systemMounts = toSet(['/', '/boot', '/boot/efi', '/efi', '/home', '/usr', '/var', '/tmp', '/opt', '/srv', '/root', '/nix']);
+
+function isSystemMount(path) {
+  var p = normalizePath(path);
+  if (systemMounts[p]) return true;
+  return p.indexOf('/var/') === 0 || p.indexOf('/usr/') === 0 || p.indexOf('/boot/') === 0;
+}
+
 function selectionSummary(entries) {
   var list = entries || [];
   if (list.length === 0) return '';

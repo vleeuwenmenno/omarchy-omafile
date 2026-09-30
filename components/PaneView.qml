@@ -499,6 +499,12 @@ Item {
       || e === "webp" || e === "bmp" || e === "svg" || e === "ico" || e === "avif"
   }
 
+  function thumbable(entry) {
+    if (!pane.thumbnails || !pane.service || !pane.service.thumbExts) return false
+    if (entry.isDir || entry.isBroken || entry.size <= 0) return false
+    return pane.service.thumbExts[entry.ext] === true
+  }
+
   function openRow(row) {
     openEntry(Model.decodeEntry(row, pane.path))
   }
@@ -784,6 +790,7 @@ Item {
                 spacing: Style.space(8)
 
                 Item {
+                  id: rowIcon
                   anchors.verticalCenter: parent.verticalCenter
                   width: Style.space(18)
                   height: pane.listIconSize
@@ -798,11 +805,14 @@ Item {
                     font.pixelSize: pane.scaled(Style.font.icon)
                   }
 
-                  Image {
+                  ThumbImage {
                     id: rowThumb
                     anchors.fill: parent
-                    visible: pane.previewable(row.entry) && status === Image.Ready
-                    source: pane.previewable(row.entry) ? Util.fileUrl(row.entry.path) : ""
+                    service: pane.service
+                    entry: row.entry
+                    direct: pane.previewable(row.entry)
+                    generated: pane.thumbable(row.entry)
+                    requestSize: pane.listIconSize * 2
                     sourceSize.width: Style.space(36)
                     sourceSize.height: pane.listIconSize * 2
                     fillMode: Image.PreserveAspectFit
@@ -924,6 +934,7 @@ Item {
             visible: pane.compactView
 
             Item {
+              id: compactIcon
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(18)
               height: pane.listIconSize
@@ -938,11 +949,15 @@ Item {
                 font.pixelSize: pane.scaled(Style.font.icon)
               }
 
-              Image {
+              ThumbImage {
                 id: compactThumb
                 anchors.fill: parent
-                visible: pane.compactView && pane.previewable(cell.entry) && status === Image.Ready
-                source: pane.compactView && pane.previewable(cell.entry) ? Util.fileUrl(cell.entry.path) : ""
+                active: pane.compactView
+                service: pane.service
+                entry: cell.entry
+                direct: pane.previewable(cell.entry)
+                generated: pane.thumbable(cell.entry)
+                requestSize: pane.listIconSize * 2
                 sourceSize.width: Style.space(36)
                 sourceSize.height: pane.listIconSize * 2
                 fillMode: Image.PreserveAspectFit
@@ -972,6 +987,7 @@ Item {
             visible: !pane.compactView
 
             Item {
+              id: gridIcon
               anchors.horizontalCenter: parent.horizontalCenter
               width: pane.gridIconSize
               height: pane.gridIconSize
@@ -986,14 +1002,18 @@ Item {
                 font.pixelSize: pane.scaled(Style.font.displayLarge)
               }
 
-              Image {
+              ThumbImage {
                 id: thumb
                 anchors.centerIn: parent
                 width: parent.width
                 height: parent.height
-                visible: !pane.compactView && pane.previewable(cell.entry) && status === Image.Ready
-                source: !pane.compactView && pane.previewable(cell.entry) ? Util.fileUrl(cell.entry.path) : ""
-                sourceSize.width: pane.view === "gallery" ? Style.space(360) : Style.space(96)
+                active: !pane.compactView
+                service: pane.service
+                entry: cell.entry
+                direct: pane.previewable(cell.entry)
+                generated: pane.thumbable(cell.entry)
+                requestSize: pane.gridIconSize * 2
+                sourceSize.width: pane.gridIconSize * 2
                 sourceSize.height: pane.gridIconSize * 2
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true

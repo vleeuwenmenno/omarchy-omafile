@@ -20,6 +20,7 @@ QtObject {
   property var hiddenDrives: []
   property var values: ({})
   property var pickRequest: null
+  property var thumbExts: ({ yml: true })
   signal conflictRaised(int jobId, var info)
 
   function record(name, args) {
@@ -54,5 +55,7 @@ QtObject {
   function openWith(command, path, inTerminal) { record("openWith", [command, path, inTerminal]) }
   function runCommandOn(text, path) { record("runCommandOn", [text, path]); return true }
   function openExternally(path) { record("openExternally", [path]) }
+  function thumbnailFor(path, mtime, bucket, onReady) { record("thumbnailFor", [path, mtime, bucket]); onReady(""); return null }
+  function releaseThumbnail(ticket) {}
   function finishPick(result) { record("finishPick", [result]); pickRequest = null }
 }

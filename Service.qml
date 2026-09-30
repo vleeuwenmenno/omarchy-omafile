@@ -33,6 +33,11 @@ Item {
   property real trashBytes: 0
   property var recent: []
   property var pinned: []
+  property var bookmarkLabels: ({})
+  property bool bookmarksMigrated: false
+  property bool bookmarksLoaded: false
+  property var _legacyPinned: []
+  property int _bookmarkWatchId: 0
   property var hiddenDrives: []
   property var servers: []
   property var session: null
@@ -1006,7 +1011,83 @@ Item {
     }
     if (!found) next.push(path)
     pinned = next
-    persist()
+    writeBookmarks()
+  }
+
+  function addBookmarks(paths) {
+    var next = pinned.slice()
+    var added = 0
+    for (var i = 0; i < paths.length; i++) {
+      if (next.indexOf(paths[i]) >= 0) continue
+      next.push(paths[i])
+      added++
+    }
+    if (added === 0) return 0
+    pinned = next
+    writeBookmarks()
+    return added
+  }
+
+  function bookmarkLabel(path) {
+    var label = bookmarkLabels[path]
+    return label ? String(label) : (Model.basename(String(path)) || "/")
+  }
+
+  function renameBookmark(path, label) {
+    var next = {}
+    for (var k in bookmarkLabels) next[k] = bookmarkLabels[k]
+    var clean = String(label || "").trim()
+    if (clean === "" || clean === Model.basename(String(path))) delete next[path]
+    else next[path] = clean
+    bookmarkLabels = next
+    writeBookmarks()
+  }
+
+  function writeBookmarks() {
+    var items = []
+    for (var i = 0; i < pinned.length; i++)
+      items.push({ path: pinned[i], label: bookmarkLabels[pinned[i]] || "" })
+    request({ op: "setbookmarks", items: items }, null)
+  }
+
+  function refreshBookmarks() {
+    request({ op: "bookmarks" }, {
+      onData: function (m) {
+        if (m.t !== "bookmarks") return
+        var paths = []
+        var labels = {}
+        var list = m.items || []
+        for (var i = 0; i < list.length; i++) {
+          var path = String(list[i].path || "")
+          if (!path || paths.indexOf(path) >= 0) continue
+          paths.push(path)
+          if (list[i].label) labels[path] = String(list[i].label)
+        }
+        var firstRun = !root.bookmarksMigrated
+        var merge = firstRun && root._legacyPinned.length > 0
+        if (merge) {
+          for (var j = 0; j < root._legacyPinned.length; j++)
+            if (paths.indexOf(root._legacyPinned[j]) < 0) paths.push(root._legacyPinned[j])
+        }
+        root.bookmarksMigrated = true
+        root.bookmarksLoaded = true
+        root.pinned = paths
+        root.bookmarkLabels = labels
+        if (merge) root.writeBookmarks()
+        if (firstRun) root.persist()
+        if (!root._bookmarkWatchId && m.dir) {
+          root._bookmarkWatchId = root.watchDirectory(String(m.dir), function (change) {
+            var names = change.names || []
+            if (names.length === 0 || names.indexOf("bookmarks") >= 0) bookmarkReloadTimer.restart()
+          })
+        }
+      }
+    })
+  }
+
+  property Timer bookmarkReloadTimer: Timer {
+    interval: 250
+    onTriggered: root.refreshBookmarks()
   }
 
   function openWindow(path) {
@@ -1075,7 +1156,7 @@ Item {
     var payload = {
       version: 1,
       recent: recent,
-      pinned: pinned,
+      bookmarksMigrated: bookmarksMigrated,
       hiddenDrives: hiddenDrives,
       servers: servers,
       previousFileManager: previousFileManager,
@@ -1085,6 +1166,11 @@ Item {
   }
 
   function loadState(raw) {
+    applyState(raw)
+    refreshBookmarks()
+  }
+
+  function applyState(raw) {
     var parsed = null
     try {
       parsed = JSON.parse(String(raw || "{}"))
@@ -1093,7 +1179,11 @@ Item {
     }
     if (!parsed || typeof parsed !== "object") return
     if (parsed.recent) recent = parsed.recent
-    if (parsed.pinned) pinned = parsed.pinned
+    if (parsed.pinned && !bookmarksLoaded) {
+      pinned = parsed.pinned
+      _legacyPinned = parsed.pinned.slice()
+    }
+    if (parsed.bookmarksMigrated === true) bookmarksMigrated = true
     if (parsed.hiddenDrives) hiddenDrives = parsed.hiddenDrives
     if (parsed.servers) servers = parsed.servers
     if (parsed.previousFileManager) previousFileManager = String(parsed.previousFileManager)

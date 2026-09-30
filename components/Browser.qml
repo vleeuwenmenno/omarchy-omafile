@@ -416,7 +416,8 @@ Item {
     dialogError = ""
     appFilter = ""
     Qt.callLater(function () {
-      if (dialogMode === "rename" || dialogMode === "newfolder" || dialogMode === "newfile" || dialogMode === "path") {
+      if (dialogMode === "rename" || dialogMode === "newfolder" || dialogMode === "newfile" || dialogMode === "path"
+          || dialogMode === "bookmarkname") {
         dialogField.text = root.dialogValue
         dialogField.forceActiveFocus()
         if (dialogMode === "rename") {
@@ -473,6 +474,12 @@ Item {
     if (dialogMode === "path") {
       closeDialog()
       p.navigate(value)
+      return
+    }
+    if (dialogMode === "bookmarkname") {
+      var place = dialogPayload
+      closeDialog()
+      if (place && place.path) service.renameBookmark(place.path, value)
       return
     }
     if (!value) {
@@ -1693,6 +1700,7 @@ Item {
           onRemoveBookmark: function (target) { root.service.togglePinned(target) }
           onHideDrive: function (key) { root.service.toggleHiddenDrive(key) }
           onPlaceMenuRequested: function (row, x, y) { root.openPlaceMenu(row, x, y) }
+          onBookmarkDropped: function (paths) { root.bookmarkFolders(paths) }
           onShowAllDrives: root.showDialog("settings", "Settings", "", null)
           onConnectServer: function (uri) {
             root.showDialog("connect", "Connect to a server", String(uri || ""), null)
@@ -2440,9 +2448,11 @@ Item {
 
           TextField {
             id: dialogField
+            objectName: "dialogField"
             width: parent.width
             visible: root.dialogMode === "rename" || root.dialogMode === "newfolder"
               || root.dialogMode === "newfile" || root.dialogMode === "path"
+              || root.dialogMode === "bookmarkname"
             onAccepted: root.submitDialog()
             Keys.onEscapePressed: root.closeDialog()
           }

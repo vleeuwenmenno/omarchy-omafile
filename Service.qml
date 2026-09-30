@@ -100,7 +100,7 @@ Item {
   }
 
   function startPath() {
-    var configured = String(setting("homePath", "") || "").trim()
+    var configured = String(settingNow("homePath", "") || "").trim()
     if (configured) return Model.normalizePath(Model.expandTilde(configured, home))
     return home || "/"
   }
@@ -732,13 +732,13 @@ Item {
   }
 
   function openTerminal(path) {
-    var configured = String(setting("terminal", "") || "").trim()
+    var configured = String(settingNow("terminal", "") || "").trim()
     if (configured) Quickshell.execDetached(["sh", "-c", configured, "omafile"])
     else Quickshell.execDetached(["xdg-terminal-exec"])
   }
 
   function openEditor(path) {
-    var configured = String(setting("editor", "") || "").trim()
+    var configured = String(settingNow("editor", "") || "").trim()
     if (configured) Quickshell.execDetached(["sh", "-c", configured + " \"$1\"", "omafile", path])
     else Quickshell.execDetached(["omarchy-launch-editor", path])
   }

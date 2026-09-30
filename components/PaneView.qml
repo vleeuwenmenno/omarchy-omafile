@@ -22,7 +22,7 @@ Item {
 
   readonly property int rowHeight: Math.round(Style.space(22) * viewScale)
   readonly property int listIconSize: Math.round(Style.space(18) * viewScale)
-  readonly property int gridIconSize: Math.round(Style.space(view === "gallery" ? 150 : 48) * viewScale)
+  readonly property int gridIconSize: Math.round(Style.space(48) * viewScale)
   readonly property bool compactView: view === "compact"
 
   function scaled(value) {
@@ -64,6 +64,7 @@ Item {
   signal openRequested(var entry)
   signal contextRequested(var entry, real sceneX, real sceneY)
   signal statusChanged()
+  signal zoomRequested(real delta)
 
   function countSelection() {
     var n = 0
@@ -628,6 +629,21 @@ Item {
       onReleased: banding = false
       onCanceled: banding = false
 
+      property real wheelAccum: 0
+
+      onWheel: function (wheel) {
+        if (!(wheel.modifiers & Qt.ControlModifier)) {
+          wheel.accepted = false
+          return
+        }
+        wheelAccum += wheel.angleDelta.y
+        var steps = wheelAccum > 0 ? Math.floor(wheelAccum / 120) : Math.ceil(wheelAccum / 120)
+        if (steps !== 0) {
+          wheelAccum -= steps * 120
+          pane.zoomRequested(steps * 0.1)
+        }
+      }
+
       Rectangle {
         visible: bandArea.banding
         x: Math.min(bandArea.originX, bandArea.currentX)
@@ -857,7 +873,7 @@ Item {
         model: pane.rows
         visible: pane.view !== "list"
         cellWidth: pane.compactView ? Math.round(Style.space(230) * pane.viewScale)
-          : Math.round(Style.space(pane.view === "gallery" ? 190 : 110) * pane.viewScale)
+          : Math.round(Style.space(110) * pane.viewScale)
         cellHeight: pane.compactView ? pane.rowHeight + Style.space(2)
           : Math.round(Style.space(pane.view === "gallery" ? 196 : 96) * pane.viewScale)
         cacheBuffer: 600
@@ -957,7 +973,7 @@ Item {
 
             Item {
               anchors.horizontalCenter: parent.horizontalCenter
-              width: pane.view === "gallery" ? parent.width : Style.space(48)
+              width: pane.gridIconSize
               height: pane.gridIconSize
 
               Text {
@@ -967,7 +983,7 @@ Item {
                 color: cell.entry.isBroken ? Color.urgent
                   : (cell.entry.isDir ? pane.accent : Util.alpha(pane.fg, 0.8))
                 font.family: Style.font.family
-                font.pixelSize: pane.scaled(pane.view === "gallery" ? Style.font.displayLarge * 2 : Style.font.displayLarge)
+                font.pixelSize: pane.scaled(Style.font.displayLarge)
               }
 
               Image {
@@ -994,9 +1010,8 @@ Item {
               color: pane.fg
               font.family: Style.font.family
               font.pixelSize: pane.scaled(Style.font.caption)
-              maximumLineCount: pane.view === "gallery" ? 1 : 2
-              wrapMode: pane.view === "gallery" ? Text.NoWrap : Text.WrapAnywhere
-              elide: pane.view === "gallery" ? Text.ElideMiddle : Text.ElideNone
+              maximumLineCount: 2
+              wrapMode: Text.WrapAnywhere
             }
           }
         }

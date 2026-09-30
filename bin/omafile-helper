@@ -285,13 +285,15 @@ def poll_loop(handle):
         except OSError:
             snap = None
         if last_snapshot is not None and snap is not None and snap != last_snapshot:
-            emit({"id": handle.req_id, "t": "changed", "path": to_str(handle.path_bytes), "names": []})
+            changed = [n for n in set(snap) | set(last_snapshot) if snap.get(n) != last_snapshot.get(n)]
+            names = sorted(to_str(n) for n in changed) if len(changed) <= 200 else []
+            emit({"id": handle.req_id, "t": "changed", "path": to_str(handle.path_bytes), "names": names})
         if snap is not None:
             last_snapshot = snap
 
 def start_watch(req_id, path_bytes):
     handle = WatchHandle(req_id, path_bytes)
-    fd = try_inotify_init() if INOTIFY_AVAILABLE else None
+    fd = try_inotify_init() if INOTIFY_AVAILABLE and not os.environ.get("OMAFILE_FORCE_POLL") else None
     if fd is not None:
         wd = INOTIFY_LIB.inotify_add_watch(fd, path_bytes, WATCH_MASK)
         if wd >= 0:

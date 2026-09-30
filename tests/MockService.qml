@@ -51,11 +51,12 @@ QtObject {
   property var watchCallback: null
   property var statItems: ({})
   function listDirectory(path, hidden, onChunk, onDone, onError) {
+    record("listDirectory", [path])
     Qt.callLater(function () { onChunk(mock.files); onDone({ total: mock.files.length }) })
     return 1
   }
   function listRecent(onChunk, onDone, onError) { Qt.callLater(function () { onDone({ total: 0 }) }); return 2 }
-  function watchDirectory() { return 3 }
+  function watchDirectory(path, onChanged) { watchCallback = onChanged; return 3 }
   function unwatch() {}
   function cancel() {}
   function noteRecent() {}

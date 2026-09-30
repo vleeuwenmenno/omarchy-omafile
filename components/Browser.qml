@@ -430,10 +430,16 @@ Item {
         root.appCursor = 0
         appField.forceActiveFocus()
       } else if (dialogMode === "connect") {
-        root.connectStatus = ""
-        root.connectFailed = false
+        var saved = root.service ? root.service.settingsForServer(root.dialogValue) : null
+        root.connectStatus = root.dialogPayload && root.dialogPayload.error ? String(root.dialogPayload.error) : ""
+        root.connectFailed = root.connectStatus !== ""
         serverField.text = root.dialogValue
-        serverField.forceActiveFocus()
+        userField.text = saved ? String(saved.user || "") : ""
+        domainField.text = saved ? String(saved.domain || "") : ""
+        passwordField.text = ""
+        root.connectAnonymous = saved ? saved.anonymous === true : false
+        if (root.connectFailed && !root.connectAnonymous) passwordField.forceActiveFocus()
+        else serverField.forceActiveFocus()
       }
     })
   }
@@ -442,6 +448,37 @@ Item {
     dialogPayload = null
     dialogError = ""
     keyCatcher.forceActiveFocus()
+  }
+  property string quickConnecting: ""
+  function openServer(uri) {
+    var address = String(uri || "")
+    if (!service || !address || !service.isRememberedServer(address)) {
+      showDialog("connect", "Connect to a server", address, null)
+      return
+    }
+    if (quickConnecting === address) return
+    var saved = service.settingsForServer(address)
+    var label = Model.serverLabel(address)
+    var key = Model.serverKeyOf(address)
+    var mounts = service.networkMounts()
+    var connected = false
+    for (var i = 0; i < mounts.length; i++)
+      if (mounts[i].host && Model.serverKey(mounts[i].user, mounts[i].host, mounts[i].port) === key) connected = true
+    quickConnecting = address
+    statusText = (connected ? "Opening " : "Connecting to ") + label
+    service.connectToServer(address, saved.user, saved.domain, "", saved.anonymous === true,
+      function (m) {
+        root.quickConnecting = ""
+        root.statusText = connected ? "" : "Connected to " + label
+        var target = String(m.path || "")
+        if (target) root.activePane().navigate(target)
+      },
+      function (m) {
+        root.quickConnecting = ""
+        root.statusText = ""
+        root.showDialog("connect", "Connect to " + label, address,
+          { error: String(m.message || "Could not connect") + ". Check the details and try again." })
+      })
   }
   function submitConnect() {
     if (!service) return
@@ -1685,6 +1722,7 @@ Item {
 
         SidebarPlaces {
           id: sidebar
+          objectName: "sidebar"
           width: root.sidebarVisible ? Style.space(190) : 0
           height: parent.height
           visible: root.sidebarVisible
@@ -1702,9 +1740,7 @@ Item {
           onPlaceMenuRequested: function (row, x, y) { root.openPlaceMenu(row, x, y) }
           onBookmarkDropped: function (paths) { root.bookmarkFolders(paths) }
           onShowAllDrives: root.showDialog("settings", "Settings", "", null)
-          onConnectServer: function (uri) {
-            root.showDialog("connect", "Connect to a server", String(uri || ""), null)
-          }
+          onConnectServer: function (uri) { root.openServer(String(uri || "")) }
           onDisconnectServer: function (path) {
             if (root.service) root.service.disconnectServer(path, null, null)
           }
@@ -3015,6 +3051,7 @@ Item {
 
             TextField {
               id: serverField
+              objectName: "serverField"
               width: parent.width
               placeholderText: "smb://server/share"
               onAccepted: root.submitConnect()
@@ -3031,6 +3068,7 @@ Item {
 
             TextField {
               id: userField
+              objectName: "userField"
               width: parent.width
               visible: !root.connectAnonymous
               placeholderText: "User name"

@@ -553,3 +553,13 @@ test('system mounts are never offered for unmounting', function () {
   assert.equal(Model.isSystemMount('/home/me/Projects'), false);
 });
 
+test('server addresses collapse to one entry per user and host', function () {
+  assert.equal(Model.serverKeyOf('ssh://laptop'), 'laptop');
+  assert.equal(Model.serverKeyOf('ssh://laptop/'), 'laptop');
+  assert.equal(Model.serverKeyOf('sftp://Laptop/home/menno/'), 'laptop');
+  assert.equal(Model.serverKeyOf('ssh://menno@laptop:2222/x'), 'menno@laptop:2222');
+  assert.equal(Model.serverKey('', 'LAPTOP', ''), 'laptop');
+  assert.equal(Model.serverLabel('ssh://laptop/home/menno/'), 'laptop');
+  assert.equal(Model.serverLabel('smb://me@nas/media'), 'me@nas');
+  assert.equal(Model.serverLabel('not a uri'), 'not a uri');
+});

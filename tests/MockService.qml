@@ -66,6 +66,12 @@ QtObject {
   }
   function beginTransfer(op, sources, dest, conflict) { record("beginTransfer", [op, sources, dest, conflict]); return 1 }
   function trashPaths(paths, onDone, onError) { record("trashPaths", [paths]); if (onDone) onDone() }
+  function deletePaths(paths, onDone, onError) { record("deletePaths", [paths]); if (onDone) onDone({ results: [] }) }
+  function restoreFromTrash(names, onDone, onError) {
+    record("restoreFromTrash", [names])
+    if (onDone) onDone({ results: names.map(function (n) { return { path: n, ok: true } }) })
+  }
+  function emptyTrash(onDone) { record("emptyTrash", []); trashCount = 0; if (onDone) onDone({}) }
   function peekFile(path, limit, onDone, onError) { record("peekFile", [path]); onDone({ text: "key: value\n", binary: false, truncated: false }) }
   function openWith(command, path, inTerminal) { record("openWith", [command, path, inTerminal]) }
   function runCommandOn(text, path) { record("runCommandOn", [text, path]); return true }

@@ -474,6 +474,30 @@ Item {
   function nudgeViewScale(delta) {
     setViewScale(viewScale + delta)
   }
+  function dropFiles(paths, target, mode) {
+    if (!service || !paths || paths.length === 0 || !target) return
+    if (mode === "trash") {
+      var trashable = Model.dropSources(paths, target, false)
+      if (trashable.length > 0) doTrash(trashable)
+      return
+    }
+    var sources = Model.dropSources(paths, target, mode === "copy")
+    if (sources.length === 0) return
+    if (mode === "copy") {
+      startDropTransfer("copy", sources, target)
+      return
+    }
+    service.statPaths([sources[0], target], function (items) {
+      var same = items && items.length === 2 && items[0].dev !== undefined
+        && items[1].dev !== undefined && items[0].dev === items[1].dev
+      root.startDropTransfer(same ? "move" : "copy", sources, target)
+    })
+  }
+  function startDropTransfer(op, sources, target) {
+    service.beginTransfer(op, sources, target, "ask")
+    statusText = (op === "move" ? "Moving " : "Copying ")
+      + Model.formatCount(sources.length, "item", "items") + " to " + (target === "/" ? "/" : Model.basename(target))
+  }
   function transferToOtherPane(op) {
     if (!split) return
     var from = activePane()
@@ -482,8 +506,8 @@ Item {
     if (paths.length === 0) return
     service.beginTransfer(op, paths, to.path, "ask")
   }
-  function doTrash() {
-    var paths = activePane().selectedPaths()
+  function doTrash(given) {
+    var paths = given || activePane().selectedPaths()
     if (paths.length === 0) return
     if (service.settingNow("useTrash", true) !== true) return askDelete(paths)
     if (service.settingNow("confirmTrash", true) !== true) return performTrash(paths)
@@ -495,7 +519,7 @@ Item {
   }
   function performTrash(paths) {
     var p = activePane()
-    service.trashPaths(paths, function () { p.refresh() }, null)
+    service.trashPaths(paths, function () { root.refreshPanes() }, null)
     statusText = Model.formatCount(paths.length, "item moved to trash", "items moved to trash")
   }
   function askDelete(paths) {
@@ -1307,6 +1331,9 @@ Item {
 
         PathBar {
           id: pathBar
+          objectName: "pathBar"
+          dragPaths: root.service ? root.service.dragPaths : []
+          onFilesDropped: function (paths, target, mode) { root.dropFiles(paths, target, mode) }
           anchors.left: navButtons.right
           anchors.right: rightControls.left
           anchors.leftMargin: Style.space(6)
@@ -1374,6 +1401,7 @@ Item {
           onDisconnectServer: function (path) {
             if (root.service) root.service.disconnectServer(path, null, null)
           }
+          onFilesDropped: function (paths, target, mode) { root.dropFiles(paths, target, mode) }
         }
 
         Row {
@@ -1415,6 +1443,7 @@ Item {
               onOpenRequested: function (entry) { root.handleOpenRequest(entry) }
               onNavigated: function (p) { root.rememberSession() }
               onZoomRequested: function (delta) { root.nudgeViewScale(delta) }
+              onFilesDropped: function (paths, target, mode) { root.dropFiles(paths, target, mode) }
               onContextRequested: function (entry, x, y) {
                 root.menuKind = ""
                 root.menuEntry = entry
@@ -1461,6 +1490,7 @@ Item {
               onOpenRequested: function (entry) { root.handleOpenRequest(entry) }
               onNavigated: function (p) { root.rememberSession() }
               onZoomRequested: function (delta) { root.nudgeViewScale(delta) }
+              onFilesDropped: function (paths, target, mode) { root.dropFiles(paths, target, mode) }
               onContextRequested: function (entry, x, y) {
                 root.menuKind = ""
                 root.menuEntry = entry

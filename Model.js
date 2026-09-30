@@ -347,6 +347,75 @@ function isAncestor(ancestorPath, path) {
   return p.indexOf(a + '/') === 0;
 }
 
+function pathToFileUrl(path) {
+  try {
+    return 'file://' + String(path || '').split('/').map(encodeURIComponent).join('/');
+  } catch (e) {
+    return '';
+  }
+}
+
+function fileUrlToPath(url) {
+  var s = String(url || '');
+  if (s.indexOf('file://') !== 0) return '';
+  var rest = s.slice(7);
+  if (rest.charAt(0) !== '/') {
+    var slash = rest.indexOf('/');
+    var host = slash < 0 ? rest : rest.slice(0, slash);
+    if (host !== '' && host !== 'localhost') return '';
+    rest = slash < 0 ? '/' : rest.slice(slash);
+  }
+  var cut = rest.search(/[?#]/);
+  if (cut >= 0) rest = rest.slice(0, cut);
+  try {
+    return normalizePath(decodeURIComponent(rest));
+  } catch (e) {
+    return '';
+  }
+}
+
+function localPathsFromUrls(urls) {
+  var out = [];
+  var seen = {};
+  var list = urls || [];
+  for (var i = 0; i < list.length; i++) {
+    var p = fileUrlToPath(list[i]);
+    if (p === '' || seen[p]) continue;
+    seen[p] = true;
+    out.push(p);
+  }
+  return out;
+}
+
+function uriList(paths) {
+  var out = [];
+  for (var i = 0; i < paths.length; i++) {
+    var url = pathToFileUrl(paths[i]);
+    if (url !== '') out.push(url);
+  }
+  return out.length > 0 ? out.join('\r\n') + '\r\n' : '';
+}
+
+function samePaths(a, b) {
+  if (!a || !b || a.length === 0 || a.length !== b.length) return false;
+  var seen = {};
+  for (var i = 0; i < b.length; i++) seen[normalizePath(b[i])] = true;
+  for (var j = 0; j < a.length; j++) if (!seen[normalizePath(a[j])]) return false;
+  return true;
+}
+
+function dropSources(paths, target, copying) {
+  var dest = normalizePath(target);
+  var out = [];
+  for (var i = 0; i < paths.length; i++) {
+    var src = normalizePath(paths[i]);
+    if (src === dest || isAncestor(src, dest)) continue;
+    if (!copying && parentPath(src) === dest) continue;
+    out.push(src);
+  }
+  return out;
+}
+
 function commonPrefix(a, b) {
   var n = Math.min(a.length, b.length);
   var i = 0;

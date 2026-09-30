@@ -259,6 +259,7 @@ Item {
     })
   }
 
+  property var dragPaths: []
   property var thumbExts: ({})
   property var _thumbCache: ({})
   property var _thumbWaiting: ({})

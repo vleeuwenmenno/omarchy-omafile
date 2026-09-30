@@ -25,6 +25,32 @@ Item {
   signal searchSubmitted(string text)
   signal dismissed()
   signal editingFinished()
+  signal filesDropped(var paths, string target, string mode)
+
+  property var dragPaths: []
+
+  function crumbTarget(crumb) {
+    return Model.expandTilde(String(crumb.path || ""), bar.home)
+  }
+
+  function dropPaths(event) {
+    return event && event.hasUrls ? Model.localPathsFromUrls(event.urls) : []
+  }
+
+  function acceptsDrop(drag, target) {
+    var paths = dropPaths(drag)
+    if (paths.length === 0 || target === "") return false
+    return Model.dropSources(paths, target, drag.proposedAction === Qt.CopyAction).length > 0
+  }
+
+  function handleDrop(drop, target) {
+    var paths = dropPaths(drop)
+    if (paths.length === 0) return
+    var internal = (drop.source !== null && drop.source !== undefined && drop.source.omafileDrag === true)
+      || Model.samePaths(paths, bar.dragPaths)
+    drop.accept(Qt.CopyAction)
+    bar.filesDropped(paths, target, !internal || drop.proposedAction === Qt.CopyAction ? "copy" : "auto")
+  }
 
   onPathChanged: {
     if (bar.editing) bar.endEdit()
@@ -143,12 +169,25 @@ Item {
                 }
 
                 Rectangle {
+                  objectName: "crumb-" + index
                   width: crumbLabel.implicitWidth + Style.space(8)
                   height: Style.space(20)
                   radius: Style.cornerRadius
-                  color: crumbHover.hovered ? Util.alpha(Color.foreground, 0.12) : "transparent"
+                  color: crumbDrop.containsDrag ? Util.alpha(Color.accent, 0.35)
+                    : (crumbHover.hovered ? Util.alpha(Color.foreground, 0.12) : "transparent")
+                  border.width: crumbDrop.containsDrag ? Math.max(1, Style.space(1)) : 0
+                  border.color: Color.accent
 
                   HoverHandler { id: crumbHover }
+
+                  DropArea {
+                    id: crumbDrop
+                    anchors.fill: parent
+                    enabled: !bar.virtualView && !bar.editing
+                    keys: ["text/uri-list"]
+                    onEntered: function (drag) { if (!bar.acceptsDrop(drag, bar.crumbTarget(modelData))) drag.accepted = false }
+                    onDropped: function (drop) { bar.handleDrop(drop, bar.crumbTarget(modelData)) }
+                  }
 
                   Text {
                     id: crumbLabel

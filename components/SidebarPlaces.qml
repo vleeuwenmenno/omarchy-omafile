@@ -83,6 +83,31 @@ Item {
   signal showAllDrives()
   signal connectServer(string uri)
   signal disconnectServer(string path)
+  signal filesDropped(var paths, string target, string mode)
+  function droppable(row) {
+    if (!row || !row.path || row.path === "recent:") return false
+    return row.connect !== true && row.server !== true && row.unhide !== true
+  }
+
+  function dropPaths(event) {
+    return event && event.hasUrls ? Model.localPathsFromUrls(event.urls) : []
+  }
+
+  function acceptsDrop(drag, target, trash) {
+    var paths = dropPaths(drag)
+    if (paths.length === 0) return false
+    return Model.dropSources(paths, target, !trash && drag.proposedAction === Qt.CopyAction).length > 0
+  }
+
+  function handleDrop(drop, target, trash) {
+    var paths = dropPaths(drop)
+    if (paths.length === 0) return
+    var internal = (drop.source !== null && drop.source !== undefined && drop.source.omafileDrag === true)
+      || Model.samePaths(paths, service ? service.dragPaths : [])
+    var mode = trash ? "trash" : (!internal || drop.proposedAction === Qt.CopyAction ? "copy" : "auto")
+    drop.accept(Qt.CopyAction)
+    sidebar.filesDropped(paths, target, mode)
+  }
 
   function usablePlace(value, homePath) {
     var p = String(value || "")
@@ -235,11 +260,13 @@ Item {
             spacing: Style.space(1)
 
             Text {
-              text: modelData.title
+              objectName: "section-" + modelData.title
+              width: parent.width
+              text: modelData.title + (headerDrop.containsDrag ? "  +" : "")
               leftPadding: Style.space(12)
               topPadding: Style.space(8)
               bottomPadding: Style.space(3)
-              color: Util.alpha(Color.foreground, 0.4)
+              color: headerDrop.containsDrag ? Color.accent : Util.alpha(Color.foreground, 0.4)
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
@@ -255,13 +282,30 @@ Item {
                 x: Style.space(4)
                 height: Style.space(24)
                 radius: Style.cornerRadius
-                color: sidebar.currentPath === modelData.path
-                  ? Util.alpha(Color.accent, 0.18)
-                  : (placeHover.hovered ? Util.alpha(Color.foreground, 0.08) : "transparent")
+                color: placeDrop.containsDrag ? Util.alpha(Color.accent, 0.3)
+                  : (sidebar.currentPath === modelData.path
+                    ? Util.alpha(Color.accent, 0.18)
+                    : (placeHover.hovered ? Util.alpha(Color.foreground, 0.08) : "transparent"))
                 border.width: cursored ? Math.max(1, Style.space(1)) : 0
                 border.color: Util.alpha(Color.accent, 0.9)
 
                 HoverHandler { id: placeHover }
+
+                DropArea {
+                  id: placeDrop
+                  anchors.fill: parent
+                  enabled: sidebar.droppable(modelData) || modelData.dropBookmark === true
+                  keys: ["text/uri-list"]
+                  onEntered: function (drag) {
+                    var ok = modelData.dropBookmark === true ? sidebar.acceptsBookmark(drag)
+                      : sidebar.acceptsDrop(drag, modelData.path, modelData.trash === true)
+                    if (!ok) drag.accepted = false
+                  }
+                  onDropped: function (drop) {
+                    if (modelData.dropBookmark === true) sidebar.handleBookmarkDrop(drop)
+                    else sidebar.handleDrop(drop, modelData.path, modelData.trash === true)
+                  }
+                }
 
                 MouseArea {
                   anchors.fill: parent
@@ -396,11 +440,21 @@ Item {
           x: Style.space(4)
           height: Style.space(24)
           radius: Style.cornerRadius
-          color: trashHover.hovered ? Util.alpha(Color.foreground, 0.08) : "transparent"
+          color: trashDrop.containsDrag ? Util.alpha(Color.urgent, 0.25)
+            : (trashHover.hovered ? Util.alpha(Color.foreground, 0.08) : "transparent")
           border.width: cursored ? Math.max(1, Style.space(1)) : 0
           border.color: Util.alpha(Color.accent, 0.9)
 
           HoverHandler { id: trashHover }
+
+          DropArea {
+            id: trashDrop
+            objectName: "trashDrop"
+            anchors.fill: parent
+            keys: ["text/uri-list"]
+            onEntered: function (drag) { if (!sidebar.acceptsDrop(drag, sidebar.trashPath(), true)) drag.accepted = false }
+            onDropped: function (drop) { sidebar.handleDrop(drop, sidebar.trashPath(), true) }
+          }
 
           MouseArea {
             anchors.fill: parent

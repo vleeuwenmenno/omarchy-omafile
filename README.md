@@ -14,6 +14,7 @@ A lightweight, fast file manager plugin for Omarchy running in the shell.
 * Live directory watching: external changes appear immediately
 * Background copy and move with persistent progress tracking
 * Freedesktop trash integration, compatible with GNOME Files
+* Drag and drop: files to other apps such as Telegram, Discord or a browser upload, between folders and panes, onto the sidebar, and in from other apps
 * Recursive file search across directories
 * Image previews in list, compact and grid view, plus thumbnails for videos, PDFs, office files and anything else your system has a thumbnailer for
 * Recent files, and bookmarks for the folders you use most
@@ -86,6 +87,12 @@ Zoom scales rows, icons and grid cells from 50 to 300 percent. Use the minus and
 ### Preview
 
 Press Space on a file to preview it without opening another app. Images are shown full size. Text files such as `.yml`, `.json`, `.md` or scripts are shown as text, up to the first 256 KB. Arrow keys move to the next file while the preview stays open. Enter opens the file, and Space or Escape closes the preview. Preview is also in the right click menu.
+
+### Drag and drop
+
+Drag files or folders out of Omafile into any app that accepts files, such as Telegram, Discord, a browser upload field or a terminal. Pressing on an item that is already part of a selection drags the whole selection.
+
+Inside Omafile, drop onto a folder, onto the empty part of a pane, onto the other pane, onto a place, bookmark or drive in the sidebar, or onto any folder in the path bar at the top, for example the parent folder. The spot that will receive the drop lights up. Within the same drive the items are moved, onto another drive they are copied, the way GNOME Files does it. Hold Ctrl while dropping to copy instead. Dropping onto Trash in the sidebar moves the items to the trash. Files dragged in from other apps are always copied, never moved. Dropping a folder into itself, or items into the folder they are already in, does nothing.
 
 ### Thumbnails
 

@@ -464,10 +464,41 @@ test('preview kind follows the entry', function () {
   assert.equal(Model.isViewMode('gallery'), false);
   assert.equal(Model.isViewMode('columns'), false);
 });
+
 test('saved gallery views fall back to grid', function () {
   assert.equal(Model.normalizeViewMode('gallery'), 'grid');
   assert.equal(Model.normalizeViewMode('compact'), 'compact');
   assert.equal(Model.normalizeViewMode('nope'), 'list');
   assert.equal(Model.normalizeViewMode(undefined), 'list');
+});
+
+test('file urls round trip through paths', function () {
+  assert.equal(Model.pathToFileUrl('/home/me/my clip #1.mp4'), 'file:///home/me/my%20clip%20%231.mp4');
+  assert.equal(Model.fileUrlToPath('file:///home/me/my%20clip%20%231.mp4'), '/home/me/my clip #1.mp4');
+  assert.equal(Model.fileUrlToPath('file://localhost/tmp/a'), '/tmp/a');
+  assert.equal(Model.fileUrlToPath('file://otherhost/tmp/a'), '');
+  assert.equal(Model.fileUrlToPath('https://example.com/a.png'), '');
+  assert.equal(Model.fileUrlToPath('file:///tmp/bad%E0%A4%A'), '');
+  assert.equal(Model.fileUrlToPath('file:///tmp/dir/'), '/tmp/dir');
+});
+
+test('uri lists use CRLF and skip non file urls on the way in', function () {
+  assert.equal(Model.uriList(['/a b', '/c']), 'file:///a%20b\r\nfile:///c\r\n');
+  assert.equal(Model.uriList([]), '');
+  assert.deepEqual(Array.from(Model.localPathsFromUrls(['file:///a', 'http://x/y', 'file:///a', 'file:///b'])), ['/a', '/b']);
+});
+
+test('drop sources skip moves into the same folder or into themselves', function () {
+  var paths = ['/home/me/a.txt', '/home/me/docs', '/home/other/b.txt'];
+  assert.deepEqual(Array.from(Model.dropSources(paths, '/home/me', false)), ['/home/other/b.txt']);
+  assert.deepEqual(Array.from(Model.dropSources(paths, '/home/me', true)), paths);
+  assert.deepEqual(Array.from(Model.dropSources(paths, '/home/me/docs', false)), ['/home/me/a.txt', '/home/other/b.txt']);
+  assert.deepEqual(Array.from(Model.dropSources(['/home/me/docs'], '/home/me/docs/inner', true)), []);
+});
+
+test('same paths ignores order and trailing slashes', function () {
+  assert.equal(Model.samePaths(['/a', '/b/'], ['/b', '/a']), true);
+  assert.equal(Model.samePaths(['/a'], ['/a', '/b']), false);
+  assert.equal(Model.samePaths([], []), false);
 });
 

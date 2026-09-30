@@ -130,6 +130,61 @@ ShellRoot {
         browser.closeDialog()
       }
 
+      function test_3c_dragAndDrop() {
+        waitRows()
+        pane().setSortOrder("name", false)
+        var data = pane().dragMimeData(["/tmp/alpha.yml", "/tmp/my file #2.txt"])
+        compare(data["text/uri-list"], "file:///tmp/alpha.yml\r\nfile:///tmp/my%20file%20%232.txt\r\n")
+
+        mock.calls = []
+        browser.dropFiles(["/tmp/alpha.yml"], "/tmp", "auto")
+        compare(mock.called("beginTransfer"), null, "dropping into the same folder does nothing")
+        browser.dropFiles(["/tmp/docs"], "/tmp/docs/inner", "copy")
+        compare(mock.called("beginTransfer"), null, "a folder never goes into itself")
+
+        browser.dropFiles(["/tmp/alpha.yml", "/tmp/beta.png"], "/tmp/docs", "auto")
+        var call = mock.called("beginTransfer")
+        compare(call.args[0], "move")
+        compare(call.args[1], ["/tmp/alpha.yml", "/tmp/beta.png"])
+        compare(call.args[2], "/tmp/docs")
+
+        mock.devices = { "/media/usb": 2 }
+        browser.dropFiles(["/tmp/alpha.yml"], "/media/usb", "auto")
+        compare(mock.called("beginTransfer").args[0], "copy", "another drive copies")
+        mock.devices = ({})
+
+        mock.calls = []
+        browser.dropFiles(["/home/me/Downloads/pic.png"], "/tmp", "copy")
+        compare(mock.called("beginTransfer").args[0], "copy")
+        compare(mock.called("statPaths"), null, "copies skip the device check")
+
+        mock.values = { confirmTrash: false }
+        browser.dropFiles(["/tmp/alpha.yml"], "/tmp/.trash", "trash")
+        compare(mock.called("trashPaths").args[0], ["/tmp/alpha.yml"])
+        mock.values = ({})
+
+        waitRows()
+        pane().selectAll()
+        compare(pane().selectedCount, 3)
+        var first = pane().activeView().itemAtIndex(0)
+        mousePress(first, 40, first.height / 2)
+        compare(pane().selectedCount, 3, "pressing a selected item keeps the selection for dragging")
+        mouseRelease(first, 40, first.height / 2)
+        compare(pane().selectedCount, 1, "releasing without a drag selects just that item")
+      }
+
+      function test_3e_breadcrumbDrops() {
+        var bar = findChild(browser, "pathBar")
+        verify(bar !== null, "path bar")
+        compare(bar.crumbTarget({ label: "~", path: "~" }), bar.home || "/")
+        compare(bar.crumbTarget({ label: "docs", path: "~/docs" }), (bar.home || "") + "/docs")
+        compare(bar.crumbTarget({ label: "tmp", path: "/tmp" }), "/tmp")
+        mock.calls = []
+        bar.filesDropped(["/tmp/docs/inner.txt"], "/tmp", "auto")
+        compare(mock.called("beginTransfer").args[0], "move")
+        compare(mock.called("beginTransfer").args[2], "/tmp")
+      }
+
       function test_4_mouseBackForward() {
         waitRows()
         pane().navigate("/tmp/docs")

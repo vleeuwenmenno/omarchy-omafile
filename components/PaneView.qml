@@ -34,6 +34,7 @@ Item {
   property var entries: []
   property var rows: []
   property var selection: ({})
+  property string dragImage: ""
   property int cursorIndex: -1
   property int anchorIndex: -1
   property bool loading: false
@@ -65,6 +66,7 @@ Item {
   signal contextRequested(var entry, real sceneX, real sceneY)
   signal statusChanged()
   signal zoomRequested(real delta)
+  signal filesDropped(var paths, string target, string mode)
 
   function countSelection() {
     var n = 0
@@ -499,6 +501,60 @@ Item {
       || e === "webp" || e === "bmp" || e === "svg" || e === "ico" || e === "avif"
   }
 
+  function pressKeepsSelection(index, extend, toggle) {
+    if (extend || toggle || index < 0 || index >= rows.length) return false
+    return selection[rows[index][0]] === true && selectedCount > 1
+  }
+
+  function pastDragThreshold(dx, dy) {
+    return Math.abs(dx) + Math.abs(dy) >= Style.space(10)
+  }
+
+  function prepareDragImage(item) {
+    pane.dragImage = ""
+    if (!item || item.width <= 0 || item.height <= 0) return
+    item.grabToImage(function (result) { pane.dragImage = String(result.url) },
+      Qt.size(Math.round(item.width * 2), Math.round(item.height * 2)))
+  }
+
+  function dragMimeData(paths) {
+    return { "text/uri-list": Model.uriList(paths) }
+  }
+
+  function startDrag(index) {
+    if (index < 0 || index >= rows.length || dragSource.Drag.active) return
+    if (!selection[rows[index][0]]) setCursor(index, false, false)
+    var paths = selectedPaths()
+    if (paths.length === 0) return
+    dragSource.paths = paths
+    dragSource.Drag.mimeData = dragMimeData(paths)
+    dragSource.Drag.imageSource = pane.dragImage
+    dragSource.Drag.hotSpot = Qt.point(Style.space(8), Style.space(8))
+    if (service) service.dragPaths = paths
+    dragSource.Drag.active = true
+  }
+
+  function dropPaths(event) {
+    return event && event.hasUrls ? Model.localPathsFromUrls(event.urls) : []
+  }
+
+  function acceptsDrop(drag, target) {
+    var paths = dropPaths(drag)
+    if (paths.length === 0) return false
+    return Model.dropSources(paths, target, drag.proposedAction === Qt.CopyAction).length > 0
+  }
+
+  function handleDrop(drop, target) {
+    var paths = dropPaths(drop)
+    if (paths.length === 0) return
+    var internal = (drop.source !== null && drop.source !== undefined && drop.source.omafileDrag === true)
+      || Model.samePaths(paths, service ? service.dragPaths : [])
+    var mode = !internal || drop.proposedAction === Qt.CopyAction ? "copy" : "auto"
+    drop.accept(Qt.CopyAction)
+    pane.filesDropped(paths, target, mode)
+  }
+
+
   function thumbable(entry) {
     if (!pane.thumbnails || !pane.service || !pane.service.thumbExts) return false
     if (entry.isDir || entry.isBroken || entry.size <= 0) return false
@@ -584,8 +640,34 @@ Item {
     anchors.fill: parent
     color: pane.bg
     border.width: Math.max(1, Style.space(1))
-    border.color: pane.active
-      ? Util.alpha(pane.accent, 0.5) : Util.alpha(pane.fg, 0.15)
+    border.color: paneDrop.containsDrag ? pane.accent
+      : (pane.active ? Util.alpha(pane.accent, 0.5) : Util.alpha(pane.fg, 0.15))
+
+    DropArea {
+      id: paneDrop
+      objectName: "paneDrop"
+      anchors.fill: parent
+      enabled: !pane.virtualView && pane.path !== ""
+      keys: ["text/uri-list"]
+      onEntered: function (drag) { if (!pane.acceptsDrop(drag, pane.path)) drag.accepted = false }
+      onDropped: function (drop) { pane.handleDrop(drop, pane.path) }
+    }
+
+    Item {
+      id: dragSource
+      objectName: "dragSource"
+      readonly property bool omafileDrag: true
+      property var paths: []
+      width: 1
+      height: 1
+      Drag.dragType: Drag.Automatic
+      Drag.source: dragSource
+      Drag.supportedActions: Qt.CopyAction | Qt.MoveAction | Qt.LinkAction
+      Drag.proposedAction: Qt.MoveAction
+      Drag.onDragFinished: function (dropAction) {
+        if (pane.service) pane.service.dragPaths = []
+      }
+    }
 
     MouseArea {
       id: bandArea
@@ -740,9 +822,11 @@ Item {
 
           width: listView.width
           height: pane.rowHeight
-          color: pane.selection[modelData[0]]
-            ? Util.alpha(pane.accent, Style.selectedFillAlpha)
-            : (rowHover.hovered ? Util.alpha(pane.fg, Style.hoverFillAlpha) : "transparent")
+          color: rowDrop.containsDrag
+            ? Util.alpha(pane.accent, 0.3)
+            : (pane.selection[modelData[0]]
+              ? Util.alpha(pane.accent, Style.selectedFillAlpha)
+              : (rowHover.hovered ? Util.alpha(pane.fg, Style.hoverFillAlpha) : "transparent"))
 
           Rectangle {
             anchors.fill: parent
@@ -753,9 +837,24 @@ Item {
 
           HoverHandler { id: rowHover }
 
+          DropArea {
+            id: rowDrop
+            anchors.fill: parent
+            enabled: row.entry.isDir && !row.entry.isBroken
+            keys: ["text/uri-list"]
+            onEntered: function (drag) { if (!pane.acceptsDrop(drag, row.entry.path)) drag.accepted = false }
+            onDropped: function (drop) { pane.handleDrop(drop, row.entry.path) }
+          }
+
           MouseArea {
+            id: rowMouse
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            preventStealing: true
+            property real pressX: 0
+            property real pressY: 0
+            property bool dragReady: false
+            property bool collapseOnRelease: false
             onPressed: function (mouse) {
               pane.activated()
               if (mouse.button === Qt.RightButton) {
@@ -765,7 +864,28 @@ Item {
               }
               var extend = (mouse.modifiers & Qt.ShiftModifier) !== 0
               var toggle = (mouse.modifiers & Qt.ControlModifier) !== 0
-              pane.setCursor(row.index, extend, toggle)
+              pressX = mouse.x
+              pressY = mouse.y
+              dragReady = mouse.button === Qt.LeftButton
+              collapseOnRelease = pane.pressKeepsSelection(row.index, extend, toggle)
+              if (collapseOnRelease) pane.cursorIndex = row.index
+              else pane.setCursor(row.index, extend, toggle)
+              if (dragReady) pane.prepareDragImage(rowIcon)
+            }
+            onPositionChanged: function (mouse) {
+              if (!dragReady || !pane.pastDragThreshold(mouse.x - pressX, mouse.y - pressY)) return
+              dragReady = false
+              collapseOnRelease = false
+              pane.startDrag(row.index)
+            }
+            onReleased: {
+              dragReady = false
+              if (collapseOnRelease) pane.setCursor(row.index, false, false)
+              collapseOnRelease = false
+            }
+            onCanceled: {
+              dragReady = false
+              collapseOnRelease = false
             }
             onDoubleClicked: function (mouse) {
               if (mouse.button !== Qt.LeftButton) return
@@ -909,9 +1029,24 @@ Item {
 
           HoverHandler { id: cellHover }
 
+          DropArea {
+            id: cellDrop
+            anchors.fill: parent
+            enabled: cell.entry.isDir && !cell.entry.isBroken
+            keys: ["text/uri-list"]
+            onEntered: function (drag) { if (!pane.acceptsDrop(drag, cell.entry.path)) drag.accepted = false }
+            onDropped: function (drop) { pane.handleDrop(drop, cell.entry.path) }
+          }
+
           MouseArea {
+            id: cellMouse
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            preventStealing: true
+            property real pressX: 0
+            property real pressY: 0
+            property bool dragReady: false
+            property bool collapseOnRelease: false
             onPressed: function (mouse) {
               pane.activated()
               if (mouse.button === Qt.RightButton) {
@@ -921,7 +1056,28 @@ Item {
               }
               var extend = (mouse.modifiers & Qt.ShiftModifier) !== 0
               var toggle = (mouse.modifiers & Qt.ControlModifier) !== 0
-              pane.setCursor(cell.index, extend, toggle)
+              pressX = mouse.x
+              pressY = mouse.y
+              dragReady = true
+              collapseOnRelease = pane.pressKeepsSelection(cell.index, extend, toggle)
+              if (collapseOnRelease) pane.cursorIndex = cell.index
+              else pane.setCursor(cell.index, extend, toggle)
+              pane.prepareDragImage(pane.compactView ? compactIcon : gridIcon)
+            }
+            onPositionChanged: function (mouse) {
+              if (!dragReady || !pane.pastDragThreshold(mouse.x - pressX, mouse.y - pressY)) return
+              dragReady = false
+              collapseOnRelease = false
+              pane.startDrag(cell.index)
+            }
+            onReleased: {
+              dragReady = false
+              if (collapseOnRelease) pane.setCursor(cell.index, false, false)
+              collapseOnRelease = false
+            }
+            onCanceled: {
+              dragReady = false
+              collapseOnRelease = false
             }
             onDoubleClicked: pane.openEntry(cell.entry)
           }

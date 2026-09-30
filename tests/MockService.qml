@@ -21,6 +21,7 @@ QtObject {
   property var values: ({})
   property var pickRequest: null
   property var thumbExts: ({ yml: true })
+  property var dragPaths: []
   signal conflictRaised(int jobId, var info)
 
   function record(name, args) {
@@ -38,6 +39,8 @@ QtObject {
   function updateSetting(key, value) { var v = {}; for (var k in localValues) v[k] = localValues[k]; v[key] = value; localValues = v }
   function startPath() { return "/tmp" }
   function rememberSession(s) { session = s }
+  property var watchCallback: null
+  property var statItems: ({})
   function listDirectory(path, hidden, onChunk, onDone, onError) {
     Qt.callLater(function () { onChunk(mock.files); onDone({ total: mock.files.length }) })
     return 1
@@ -49,8 +52,20 @@ QtObject {
   function noteRecent() {}
   function trashFilesPath() { return "/tmp/.trash" }
   function driveHidden() { return false }
-  function networkMounts() { return [] }
-  function statPaths(paths, cb) {}
+  function networkMounts() { return drives.filter(function (d) { return d.network === true }) }
+  property var devices: ({})
+  function statPaths(paths, cb) {
+    record("statPaths", [paths])
+    var items = paths.map(function (p) {
+      var item = mock.statItems[p] || { error: "ENOENT" }
+      var out = { path: p, dev: mock.devices[p] !== undefined ? mock.devices[p] : 1 }
+      for (var k in item) out[k] = item[k]
+      return out
+    })
+    if (cb) cb(items)
+  }
+  function beginTransfer(op, sources, dest, conflict) { record("beginTransfer", [op, sources, dest, conflict]); return 1 }
+  function trashPaths(paths, onDone, onError) { record("trashPaths", [paths]); if (onDone) onDone() }
   function peekFile(path, limit, onDone, onError) { record("peekFile", [path]); onDone({ text: "key: value\n", binary: false, truncated: false }) }
   function openWith(command, path, inTerminal) { record("openWith", [command, path, inTerminal]) }
   function runCommandOn(text, path) { record("runCommandOn", [text, path]); return true }
